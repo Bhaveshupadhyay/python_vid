@@ -67,11 +67,10 @@ async def test_all_proxies(proxy_list):
     working_proxies = [p for p in results if p]
     return working_proxies
 
-def get_working_proxies():
+async def get_working_proxies_async():
     """
-    Fetches and tests proxies.
-    WARNING: This is a synchronous function that uses asyncio.run()
-    Call it via asyncio.to_thread() from async code.
+    Fetches and tests proxies asynchronously.
+    Can be called directly from async context (FastAPI lifespan).
     """
     print("📋 Clearing old proxy lists...")
     working_proxy_list.clear()
@@ -81,10 +80,10 @@ def get_working_proxies():
 
     print("📥 Fetching proxy lists from sources...")
     try:
-        get_github_proxies("socks4")
-        get_github_proxies("socks5")
-        get_github_proxies("http")
-        get_geonode_proxies()
+        await asyncio.to_thread(get_github_proxies, "socks4")
+        await asyncio.to_thread(get_github_proxies, "socks5")
+        await asyncio.to_thread(get_github_proxies, "http")
+        await asyncio.to_thread(get_geonode_proxies)
     except Exception as e:
         print(f"⚠️ Error fetching proxies: {e}")
 
@@ -96,8 +95,8 @@ def get_working_proxies():
         print("⚠️ No proxies fetched!")
         return working_proxy_list
 
-    # Test all proxies
-    asyncio.run(test_all_proxies(all_proxies))
+    # Test all proxies (directly await, no asyncio.run)
+    await test_all_proxies(all_proxies)
 
     working_count = len(working_proxy_list)
     success_rate = (working_count / total_fetched * 100) if total_fetched > 0 else 0
@@ -111,3 +110,10 @@ def get_working_proxies():
     print(f"{'='*50}\n")
 
     return working_proxy_list
+
+def get_working_proxies():
+    """
+    Synchronous wrapper for get_working_proxies_async().
+    Use this for standalone scripts. For FastAPI, use get_working_proxies_async() directly.
+    """
+    return asyncio.run(get_working_proxies_async())

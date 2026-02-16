@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, HttpUrl
 from requests import get_streaming_url
 from proxy import (
-    get_working_proxies
+    get_working_proxies_async
 )
 import asyncio
 from contextlib import asynccontextmanager
@@ -14,7 +14,7 @@ async def refresh_proxies_periodically():
         await asyncio.sleep(300)  # Wait 5 min
         print("🔄 Auto-refreshing proxies...")
         try:
-            await asyncio.to_thread(get_working_proxies)
+            await get_working_proxies_async()
             print(f"✅ Auto-refresh complete: proxies")
         except Exception as e:
             print(f"⚠️ Auto-refresh failed: {e}")
@@ -24,7 +24,7 @@ async def fetch_proxies_on_startup():
     """Fetch proxies in background without blocking server startup."""
     print("🔄 Fetching proxies in background...")
     try:
-        await asyncio.to_thread(get_working_proxies)
+        await get_working_proxies_async()
         print("✅ Proxies loaded and ready!")
     except Exception as e:
         print(f"⚠️ Failed to load proxies: {e}")
