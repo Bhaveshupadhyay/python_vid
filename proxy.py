@@ -1,0 +1,113 @@
+import asyncio
+from curl_cffi import requests
+
+# List of proxies to test
+# Format: protocol://IP:PORT
+socks4_proxy_list = []
+
+socks5_proxy_list = []
+http_proxy_list = []
+working_proxy_list = []
+
+# URL to test IP (shows your IP)
+TEST_URL = "https://api.ipify.org"
+
+# Timeout for each request in seconds
+TIMEOUT = 10
+
+def get_github_proxies(protocol: str):
+    url = f"https://raw.githubusercontent.com/TheSpeedX/PROXY-List/refs/heads/master/{protocol}.txt"
+    response = requests.get(url)
+    response.raise_for_status()
+    lines = response.text.splitlines()
+    proxies = [f"{protocol}://{line.strip()}" for line in lines if line.strip()]
+    if protocol == "socks4":
+        socks4_proxy_list.extend(proxies)
+    elif protocol == "socks5":
+        socks5_proxy_list.extend(proxies)
+    elif protocol == "http":
+        http_proxy_list.extend(proxies)
+
+def get_geonode_proxies():
+    url = "https://proxylist.geonode.com/api/proxy-list?limit=500&page=1&sort_by=lastChecked&sort_type=desc"
+    response = requests.get(url)
+    response.raise_for_status()
+    for data in response.json()["data"]:
+        if "socks4" in data["protocols"]:
+            socks4_proxy_list.append(f"socks4://{data['ip']}:{data['port']}")
+        elif "socks5" in data["protocols"]:
+            socks5_proxy_list.append(f"socks5://{data['ip']}:{data['port']}")
+        elif "http" in data["protocols"]:
+            http_proxy_list.append(f"http://{data['ip']}:{data['port']}")
+
+
+
+# Function to test a single proxy
+def test_proxy(proxy: str):
+    try:
+        response = requests.get(
+            TEST_URL,
+            proxies={"http": proxy, "https": proxy},
+            impersonate="chrome120",
+            timeout=5,  # Shorter timeout for testing (5s instead of 10s)
+        )
+        if response.status_code == 200:
+            print(f"[✅ WORKING] {proxy}")
+            working_proxy_list.append(proxy)
+            return proxy
+    except Exception:
+        # Silently fail - most proxies are dead
+        pass
+    return None
+
+# Async wrapper to test all proxies concurrently
+async def test_all_proxies(proxy_list):
+    tasks = [asyncio.to_thread(test_proxy, proxy) for proxy in proxy_list]
+    results = await asyncio.gather(*tasks)
+    working_proxies = [p for p in results if p]
+    return working_proxies
+
+def get_working_proxies():
+    """
+    Fetches and tests proxies.
+    WARNING: This is a synchronous function that uses asyncio.run()
+    Call it via asyncio.to_thread() from async code.
+    """
+    print("📋 Clearing old proxy lists...")
+    working_proxy_list.clear()
+    socks4_proxy_list.clear()
+    socks5_proxy_list.clear()
+    http_proxy_list.clear()
+
+    print("📥 Fetching proxy lists from sources...")
+    try:
+        get_github_proxies("socks4")
+        get_github_proxies("socks5")
+        get_github_proxies("http")
+        get_geonode_proxies()
+    except Exception as e:
+        print(f"⚠️ Error fetching proxies: {e}")
+
+    all_proxies = socks4_proxy_list + socks5_proxy_list + http_proxy_list
+    total_fetched = len(all_proxies)
+    print(f"📊 Fetched {total_fetched} proxies. Testing them now...")
+
+    if total_fetched == 0:
+        print("⚠️ No proxies fetched!")
+        return working_proxy_list
+
+    # Test all proxies
+    asyncio.run(test_all_proxies(all_proxies))
+
+    working_count = len(working_proxy_list)
+    success_rate = (working_count / total_fetched * 100) if total_fetched > 0 else 0
+
+    print(f"\n{'='*50}")
+    print(f"✅ Testing complete!")
+    print(f"📊 Total fetched: {total_fetched}")
+    print(f"✅ Working proxies: {working_count}")
+    print(f"❌ Failed proxies: {total_fetched - working_count}")
+    print(f"📈 Success rate: {success_rate:.1f}%")
+    print(f"{'='*50}\n")
+
+    return working_proxy_list
