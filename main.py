@@ -2,7 +2,8 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, HttpUrl
 from requests import get_streaming_url
 from proxy import (
-    get_working_proxies_async
+    get_working_proxies_async,
+    working_proxy_list
 )
 import asyncio
 from contextlib import asynccontextmanager
@@ -22,12 +23,18 @@ async def refresh_proxies_periodically():
 
 async def fetch_proxies_on_startup():
     """Fetch proxies in background without blocking server startup."""
-    print("🔄 Fetching proxies in background...")
+    import sys
+    print("🔄 Fetching proxies in background...", flush=True)
+    sys.stdout.flush()
     try:
         await get_working_proxies_async()
-        print("✅ Proxies loaded and ready!")
+        print("✅ Proxies loaded and ready!", flush=True)
+        sys.stdout.flush()
     except Exception as e:
-        print(f"⚠️ Failed to load proxies: {e}")
+        print(f"⚠️ Failed to load proxies: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        sys.stdout.flush()
 
 
 @asynccontextmanager
@@ -68,6 +75,8 @@ def get_proxy_stats():
     This returns the STORED list (no refetch).
     """
     return {
+        "total_proxies": len(working_proxy_list),
+        "proxies_loaded": len(working_proxy_list) > 0,
         "note": "These are cached proxies loaded at startup"
     }
 

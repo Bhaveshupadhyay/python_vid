@@ -60,39 +60,56 @@ def test_proxy(proxy: str):
         pass
     return None
 
-# Async wrapper to test all proxies concurrently
-async def test_all_proxies(proxy_list):
-    tasks = [asyncio.to_thread(test_proxy, proxy) for proxy in proxy_list]
-    results = await asyncio.gather(*tasks)
-    working_proxies = [p for p in results if p]
+# Async wrapper to test all proxies concurrently with limits
+async def test_all_proxies(proxy_list, max_concurrent=50):
+    """Test proxies with concurrency limit to avoid overwhelming free-tier hosts."""
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def test_with_limit(proxy):
+        async with semaphore:
+            return await asyncio.to_thread(test_proxy, proxy)
+
+    tasks = [test_with_limit(proxy) for proxy in proxy_list]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    working_proxies = [p for p in results if p and not isinstance(p, Exception)]
     return working_proxies
 
-async def get_working_proxies_async():
+async def get_working_proxies_async(max_proxies_to_test=200):
     """
     Fetches and tests proxies asynchronously.
     Can be called directly from async context (FastAPI lifespan).
+
+    Args:
+        max_proxies_to_test: Limit testing to this many proxies (useful for free-tier hosting)
     """
-    print("📋 Clearing old proxy lists...")
+    print("📋 Clearing old proxy lists...", flush=True)
     working_proxy_list.clear()
     socks4_proxy_list.clear()
     socks5_proxy_list.clear()
     http_proxy_list.clear()
 
-    print("📥 Fetching proxy lists from sources...")
+    print("📥 Fetching proxy lists from sources...", flush=True)
     try:
         await asyncio.to_thread(get_github_proxies, "socks4")
         await asyncio.to_thread(get_github_proxies, "socks5")
         await asyncio.to_thread(get_github_proxies, "http")
         await asyncio.to_thread(get_geonode_proxies)
     except Exception as e:
-        print(f"⚠️ Error fetching proxies: {e}")
+        print(f"⚠️ Error fetching proxies: {e}", flush=True)
 
     all_proxies = socks4_proxy_list + socks5_proxy_list + http_proxy_list
     total_fetched = len(all_proxies)
-    print(f"📊 Fetched {total_fetched} proxies. Testing them now...")
+
+    # Limit proxies on free tier to avoid timeouts/memory issues
+    if max_proxies_to_test and total_fetched > max_proxies_to_test:
+        print(f"📊 Limiting to first {max_proxies_to_test} proxies (fetched {total_fetched})", flush=True)
+        all_proxies = all_proxies[:max_proxies_to_test]
+        total_fetched = len(all_proxies)
+
+    print(f"📊 Testing {total_fetched} proxies...", flush=True)
 
     if total_fetched == 0:
-        print("⚠️ No proxies fetched!")
+        print("⚠️ No proxies fetched!", flush=True)
         return working_proxy_list
 
     # Test all proxies (directly await, no asyncio.run)
